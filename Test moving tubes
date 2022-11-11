@@ -1,0 +1,346 @@
+#include "raylib.h" //call raylib libary and include //
+
+#if defined(PLATFORM_WEB)
+    #include <emscripten/emscripten.h>
+#endif
+
+//----------------------------------------------------------------------------------
+// Some Defines
+//----------------------------------------------------------------------------------
+#define MAX_TUBES 80 // defining the size of the tubes
+#define FLOPPY_RADIUS 10 // the raduis of the circle (player)
+#define TUBES_WIDTH 80 // the width of the tubes
+#define MOVING_TUBES_HEIGHT 100 // the moving tubes in the game height
+#define MOVING_TUBES_SPACING 100 // the moving tubes space also
+
+#define COLLISION_AUDIO_FILE_PATH "res/collision.wav" //including the file pathway to the audio cannot be changed as declared at beginning of code
+#define BACKGROUD_MUSIC_FILE_PATH "res/background.wav" //defining background noise of collision for this to be included
+
+//----------------------------------------------------------------------------------
+// Types and Structures Definition
+//----------------------------------------------------------------------------------
+typedef struct Floppy { //redefine the name of the already exsisiting variable floppy, defining the structure of the vector 2 position x & y, the radius and the colour
+    Vector2 position;
+    int radius;
+    Color color;
+} Floppy;
+
+typedef struct Tubes { //redefine the name of the already exsisiting variable floppy
+    Vector2 size;
+    float topYPosition;
+    float bottomYPosition;
+    Color color;
+    bool active;
+} Tubes;
+
+typedef struct MovingTubes { //redefine the name of the already exsisiting variable floppy
+    Vector2 size;
+    float yPosition;
+    Color color;
+    bool active;
+} MovingTubes;
+
+
+//------------------------------------------------------------------------------------
+// Global Variables Declaration these variables must be intialised immediately
+//------------------------------------------------------------------------------------
+static const int screenWidth = 800; //these are constant variables that cannot be changed throughout the game the screeen width is 800
+static const int screenHeight = 450; //constant height of window that appears for player, the const will allow for variable values will be
+//unchangeable and read only
+
+static bool gameOver = false;
+static bool pause = false;
+static int score = 0;
+static int hiScore = 0;
+
+static Floppy floppy = { 0 };
+static Tubes tubes[MAX_TUBES] = { 0 };
+static MovingTubes movingTubes[MAX_TUBES] = { 0 };
+static float tubesXPos[MAX_TUBES] = { 0 };
+static bool isMovingTube[MAX_TUBES] = { 0 };
+static int tubesSpeedX = 0;
+static float movingTubesSpeedY = 0;
+static bool superfx = false;
+
+static Sound collisionSound;
+static Music backgroundMusic;
+static bool audioLoaded = false;
+
+//------------------------------------------------------------------------------------
+// Module Functions Declaration (local)
+//------------------------------------------------------------------------------------
+static void InitGame(void);         // Initialize game
+static void UpdateGame(void);       // Update game (one frame)
+static void DrawGame(void);         // Draw game (one frame)
+static void UnloadGame(void);       // Unload game
+static void UpdateDrawFrame(void);  // Update and Draw (one frame)
+
+//------------------------------------------------------------------------------------
+// Program main entry point
+//------------------------------------------------------------------------------------
+int main(void)
+{
+    // Initialization
+    //---------------------------------------------------------
+    InitWindow(screenWidth, screenHeight, "Floppy");
+
+    InitGame();
+
+#if defined(PLATFORM_WEB)
+    emscripten_set_main_loop(UpdateDrawFrame, 60, 1);
+#else
+    SetTargetFPS(60); //setting the target frame rate to be 60 so objects move witht the speed of the frame and they objects done fly across the screen
+    //--------------------------------------------------------------------------------------
+
+    // Main game loop
+    while (!WindowShouldClose())    // while the window shouldnt close if player press button to close or select the Escape key
+    {
+        // Update and Draw
+        //----------------------------------------------------------------------------------
+        UpdateDrawFrame();
+        //----------------------------------------------------------------------------------
+    }
+#endif
+    // De-Initialization
+    //--------------------------------------------------------------------------------------
+    UnloadGame();         // Unload loaded data (textures, sounds, models...)
+
+    CloseWindow();        // Close window and OpenGL context
+    //--------------------------------------------------------------------------------------
+
+    return 0;
+}
+//------------------------------------------------------------------------------------
+// Module Functions Definitions (local)
+//------------------------------------------------------------------------------------
+
+// Initialize game variables
+void InitGame(void)
+{
+    floppy.radius = FLOPPY_RADIUS; //initialising floppy raduis
+    floppy.position = (Vector2){80, screenHeight/2.0f - floppy.radius}; //screen height divided by 2 places floppy in the middle of the screen
+    //vector 2 is floppy position
+    tubesSpeedX = 2; //speed of the tubes is set to 2
+    movingTubesSpeedY = 0.75f; //the tubes that are moving are set to 0.75
+
+    for (int i = 0; i < MAX_TUBES; i++)
+    {
+        tubesXPos[i] = 400 + 280*i;
+    }
+
+    for (int i = 0; i < MAX_TUBES; i++)
+    {
+	    if (i % 8 < 4)
+        {
+        	tubes[i].topYPosition = -GetRandomValue(0, 120);
+        	tubes[i].bottomYPosition = 400 + tubes[i].topYPosition - 255;
+        	tubes[i].size.x = TUBES_WIDTH;
+        	tubes[i].size.y = 255;
+
+        	tubes[i].active = true;
+            movingTubes[i].active = false;
+            isMovingTube[i] = false;
+	    }
+        else
+        {
+        	movingTubes[i].yPosition = GetRandomValue(0, TUBES_WIDTH + 100);
+        	movingTubes[i].size.x = TUBES_WIDTH;
+        	movingTubes[i].size.y = MOVING_TUBES_HEIGHT;
+
+            movingTubes[i].active = true;
+        	tubes[i].active = false;
+            isMovingTube[i] = true;
+        }
+    }
+
+    score = 0;
+
+    gameOver = false;
+    superfx = false;
+    pause = false;
+
+    if (!audioLoaded) { //if audio is loaded, audio is intialised 
+        InitAudioDevice();
+
+        collisionSound = LoadSound(COLLISION_AUDIO_FILE_PATH); //loading collision sound from the file pathway
+
+        backgroundMusic = LoadMusicStream(BACKGROUD_MUSIC_FILE_PATH); //loading background music, calling file pathway to main cpp file
+	backgroundMusic.looping = true; //background music to loop 
+    	SetMusicVolume(backgroundMusic, 0.5f); //setting music volume to play at 0.5f
+	PlayMusicStream(backgroundMusic); //backup for music to play
+
+        audioLoaded = true;
+    }
+}
+
+// Update game (one frame)
+void UpdateGame(void)
+{
+    if (!gameOver)
+    {
+        if (IsKeyPressed('P')) pause = !pause; // if the key p is pressed the game is paused
+
+        if (!pause)
+        {
+            for (int i = 0; i < MAX_TUBES; i++) {
+                tubesXPos[i] -= tubesSpeedX;
+                movingTubes[i].yPosition += movingTubesSpeedY;
+
+                if (movingTubes[i].yPosition > MOVING_TUBES_SPACING) {
+                    movingTubes[i].yPosition -= MOVING_TUBES_HEIGHT + MOVING_TUBES_SPACING;
+                }
+            }
+
+            if (IsKeyDown(KEY_SPACE) && !gameOver)
+                floppy.position.y -= 3;
+            else
+                floppy.position.y += 1;
+            
+            bool collision = false; //creating a boolean to check to see if there is collision and setting the value to false
+
+            // Check Collisions
+            for (int i = 0; i < MAX_TUBES; i++)
+            {
+                if (!isMovingTube[i]) {
+                    Rectangle rec; // setting rec to be in a certain point
+                    rec.x = tubesXPos[i];
+                    rec.y = tubes[i].topYPosition;
+                    rec.width = tubes[i].size.x;
+                    rec.height = tubes[i].size.y;
+
+                    collision = collision || CheckCollisionCircleRec(floppy.position, floppy.radius, rec);
+
+                    rec.y = tubes[i].bottomYPosition;
+                    collision = collision || CheckCollisionCircleRec(floppy.position, floppy.radius, rec);
+
+                    if ((tubesXPos[i] < floppy.position.x) && tubes[i].active && !gameOver)
+                    {
+                        score += 100;
+                        tubes[i].active = false;
+
+                        superfx = true;
+
+                        if (score > hiScore) hiScore = score;
+                    }
+                }
+
+                if (isMovingTube[i]) {
+                    for (int t = 0; t < 3; t++) {
+                        Rectangle rec;
+                        rec.x = tubesXPos[i];
+                        rec.y = movingTubes[i].yPosition + t * (MOVING_TUBES_HEIGHT + MOVING_TUBES_SPACING);
+                        rec.width = movingTubes[i].size.x;
+                        rec.height = movingTubes[i].size.y;
+
+                        collision = collision || CheckCollisionCircleRec(floppy.position, floppy.radius, rec);
+                    }
+
+                    if ((tubesXPos[i] < floppy.position.x) && movingTubes[i].active && !gameOver)
+                    {
+                        score += 10;
+                        movingTubes[i].active = false;
+
+                        superfx = true;
+
+                        if (score > hiScore) hiScore = score;
+                    }
+                }
+            }
+
+            if (collision) { 
+                gameOver = true; //if there is a collision then the game is over and collsion is true
+                pause = false; // if came is paused the collision is false 
+
+                PlaySound(collisionSound); //collision sound plays if player hits object in game
+            }
+        }
+    }
+    else
+    {
+        if (IsKeyPressed(KEY_ENTER))
+        {
+            InitGame();
+            gameOver = false;
+        }
+    }
+
+    if (audioLoaded) {
+	UpdateMusicStream(backgroundMusic);
+    }
+}
+
+// Draw game (one frame)
+void DrawGame(void)
+{
+    BeginDrawing(); //setup canvas to start drawing
+
+        ClearBackground(RAYWHITE);
+
+        if (!gameOver)
+        {
+            DrawCircle(floppy.position.x, floppy.position.y, floppy.radius, YELLOW); //draws a circle, it takes 4 inputs - position y,
+            // position x, the radius and the colour
+
+            // Draw tubes
+            for (int i = 0; i < MAX_TUBES; i++)
+            {
+                if (!isMovingTube[i]) {
+                    Rectangle rec;
+                    rec.x = tubesXPos[i];
+                    rec.y = tubes[i].topYPosition;
+                    rec.width = tubes[i].size.x;
+                    rec.height = tubes[i].size.y;
+
+                    DrawRectangleRec(rec, GRAY);
+                    
+                    rec.y = tubes[i].bottomYPosition;
+                    DrawRectangleRec(rec, GRAY);
+                }
+
+                if (isMovingTube[i]) {
+                    for (int t = 0; t < 3; t++) {
+                        Rectangle rec;
+                        rec.x = tubesXPos[i];
+                        rec.y = movingTubes[i].yPosition + t * (MOVING_TUBES_HEIGHT + MOVING_TUBES_SPACING);
+                        rec.width = movingTubes[i].size.x;
+                        rec.height = movingTubes[i].size.y;
+
+                        DrawRectangleRec(rec, GRAY);
+                    }
+                }
+            }
+
+            // Draw flashing fx (one frame only)
+            if (superfx)
+            {
+                DrawRectangle(0, 0, screenWidth, screenHeight, WHITE); //draw rectangle,that is white and that is the same sixe as the width and height of the screen
+                superfx = false;
+            }
+
+            DrawText(TextFormat("%04i", score), 20, 20, 40, GRAY); // drawing word score and the score throughout the game, setting colour as gray and the size of box
+            DrawText(TextFormat("HI-SCORE: %04i", hiScore), 20, 70, 20, LIGHTGRAY);
+
+            if (pause) DrawText("GAME PAUSED", screenWidth/2 - MeasureText("GAME PAUSED", 40)/2, screenHeight/2 - 40, 40, GRAY); //if the game is paued draw text that says game is paused
+        }
+        else DrawText("PRESS [ENTER] TO PLAY AGAIN", GetScreenWidth()/2 - MeasureText("PRESS [ENTER] TO PLAY AGAIN", 20)/2, GetScreenHeight()/2 - 50, 20, GRAY);
+        //if the player loses press enter to play the game again, text appears that says press enter to play again
+
+    EndDrawing(); // end the drawing and swap buffers
+}
+
+// Unload game variables
+void UnloadGame(void) //unload the game variables 
+{
+    // TODO: Unload all dynamic loaded data (textures, sounds, models...)
+    UnloadSound(collisionSound);
+    UnloadMusicStream(backgroundMusic);
+    CloseAudioDevice();
+    audioLoaded = false;
+}
+
+// Update and Draw (one frame)
+void UpdateDrawFrame(void)
+{
+    UpdateGame();
+    DrawGame();
+}
