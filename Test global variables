@@ -1,0 +1,17 @@
+static bool gameOver = false;
+static bool pause = false;
+static int score = 0;
+static int hiScore = 0;
+
+static Floppy floppy = { 0 };
+static Tubes tubes[MAX_TUBES] = { 0 };
+static MovingTubes [MAX_TUBES] = { 0 };
+static float tubes Pos[MAX_TUBES] = { 0 };
+static bool ube[MAX_TUBES] = { 0 };
+static int tubesSpeed = 0;
+static float movingTubesSpeed = 0;
+static bool = false;
+
+static Sound collisionSound;
+static Music backgroundMusic;
+
