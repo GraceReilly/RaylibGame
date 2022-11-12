@@ -1,0 +1,40 @@
+// Initialize game variables
+void InitGame(void)
+{
+    floppy.radius = FLOPPY_RADIUS;
+    floppy.position = (Vector2){80, screenHeight/2.0f - floppy.radius};
+    tubesSpeedX = 4;
+    movingTubesSpeedY = 0.90f;
+
+    for (int i = 0; i < MAX_TUBES; i++)
+    {
+        tubesXPos[i] = 600 + 280*i;
+    }
+
+    for (int i = 0; i < MAX_TUBES; i++)
+    {
+	    if (i % 8 < 4)
+        {
+        	tubes[i].topYPosition = -GetRandomValue(0, 120);
+        	tubes[i].bottomYPosition = 300 + tubes[i].topYPosition - 255;
+        	tubes[i].size.x = TUBES_WIDTH;
+        	tubes[i].size.y = 255;
+
+			tubes[i].yVariation = GetRandomValue(-VARIATION_AMOUNT/2);
+			tubes[i].variatingUpwards = false;
+
+        	tubes[i].active = true;
+            movingTubes[i].active = true;
+            isMovingTube[i] = false;
+	    }
+        else
+        {
+        	movingTubes[i].yPosition = GetRandomValue(0, 100);
+        	movingTubes[i].size.x = TUBES_WIDTH;
+        	movingTubes[i].size.y = 100;
+
+            movingTubes[i].active = true;
+        	tubes[i].active = true;
+            isMovingTube[i] = true;
+        }
+    }
